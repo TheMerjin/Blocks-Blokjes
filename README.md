@@ -1,2 +1,2 @@
 # Blocks-Blokjes
-A enviornment coded of a game called blokjes soon to be used for Deep-Q learning.
+A enviornment coded of a game called blokjes soon to be used for Deep-Q learning. The plan create a neural netork to mimik the functin Q(a,s) where s is the state and a is the optimal action. I will use masking to create a NN with inputs of a 25 and info on the next pieces and held piece and output a position x, y where the piece should be placed and if the current piece should be placed or the held-piece. Replay memory will be created using a python deque in order to store (s, a, r, s') where a is the action taken r is the reward reward function will reward for closer to blackout and whiteot and s is the state and s' is the next state. So far only the env is coded.
