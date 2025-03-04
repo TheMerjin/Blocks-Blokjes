@@ -89,7 +89,6 @@ class Game:
     def play_move(self, move):
         if move.hold == True:
             self.hold_piece()
-            time.sleep(1)
         self.place_piece(move.piece, move.x, move.y,move.pts_per_move)
         self.move_list.append(move)
         self.pts_per_move_list.append(self.pts_per_move)
@@ -577,9 +576,22 @@ def update_target(target):
 
 
 
-def learn():
-    pass
+def learn(minibatch, batch_size):
+    states, actions, rewards, next_states, dones = zip(*minibatch)
+    target_q_vals = []
+    for sample in minibatch:
+        if minibatch[4]:
+            target_Q_val = minibatch[2]
+        else:
+            next_state_Q_values = Q_target.forward(minibatch[3])  
+            max_next_Q = max(next_state_Q_values)  
+            target_Q_val = minibatch[2] + gamma * max_next_Q
+        target_q_vals.append(target_Q_val)
+    for sample in minibatch:
+        pass# add more here mainly about finding predicted vals of Q network for each state :)
+    #find loss then preform gradient descent using loss
 
+    
 
 # Q'
 
@@ -605,10 +617,6 @@ def get_batch(D, batch_size):
     return states, actions, rewards, new_states, done 
 # Just to check the highest score obtained during training
 best_score = -np.inf
-def learn(self, data, batch_size):
-    self.D.append(data)
-    if len(self.D) < batch_size: 
-        return 0
     
 
 
@@ -646,8 +654,8 @@ def convert_vec_to_move(q_values, legal_moves, env):
     return np.random.choice(legal_moves)
 
 
-
-
+def convert_state_to_vec(state, env):
+    return np.concatenate((state.flatten(),one_hot_held(env), one_hot_next_pieces(env), [env.pts_per_move])).reshape(-1,1)
 
 
 
@@ -686,6 +694,7 @@ def train(num_episode=100,batch_size=32,C=10,ep=10):
             pygame.display.flip()  # Update the screen
             clock.tick(30)
             state = nxt_state
+            q_state = None
             epsilon = max(epsilon_min,epsilon*epsilon_decay) # e decay
 
             # e-greedy(Q)
@@ -705,7 +714,7 @@ def train(num_episode=100,batch_size=32,C=10,ep=10):
                     done = True
                     break;
                     
-                q_state = np.concatenate((state.flatten(),one_hot_held(env), one_hot_next_pieces(env), [env.pts_per_move])).reshape(-1,1)
+                q_state = convert_state_to_vec(state, env)
                 action = Q.forward(q_state).flatten()
                 action, best_idx = convert_vec_to_move(action, legal_moves,env)
                 print("coordinates of placement",action.x+1, action.y+1)
@@ -717,11 +726,10 @@ def train(num_episode=100,batch_size=32,C=10,ep=10):
                 print(action.return_params())
                 print("\n")
                 print(env.score)
-                time.sleep(1)
 
             nxt_state,reward,done = env.play_move(action)
             episode_reward += reward
-            D.append((state, best_idx, reward, nxt_state, done))
+            D.append((q_state, best_idx, reward, convert_state_to_vec(nxt_state,env), done))
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
@@ -745,3 +753,105 @@ def train(num_episode=100,batch_size=32,C=10,ep=10):
 
 
 train()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+"""import time
+def main(env):
+    play = True
+    game = env  # Initialize the game
+    running = True
+    clock = pygame.time.Clock()  # Used to control the frame rate
+    show_next_piece_info = False
+    current_song = random.choice(play_lists)
+    pygame.mixer.music.load(current_song)
+    pygame.mixer.music.play()
+
+    while running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if event.type == MUSIC_END_EVENT:
+                if play == True:
+                    next_song = current_song
+                    while next_song == current_song:  # Ensure new song is different
+                        next_song = random.choice(play_lists)
+                    current_song = next_song
+                    pygame.mixer.music.load(current_song)
+                    pygame.mixer.music.play()
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                handle_click(game, pygame.mouse.get_pos())  # Handle mouse click
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_s:
+                    if current_song is not None:
+                        pygame.mixer.music.stop()
+                        pygame.mixer.music.unload()
+                        play = False
+                        current_song = None
+                    else:
+                        play = True
+                        pygame.mixer.music.stop()
+                        pygame.mixer.music.unload()
+                        next_song = current_song
+                        while next_song == current_song:  # Ensure new song is different
+                            next_song = random.choice(play_lists)
+                        current_song = next_song
+                        pygame.mixer.music.load(current_song)
+                        pygame.mixer.music.play()
+
+                if event.key == pygame.K_SPACE:
+                    show_next_piece_info = True
+                if event.key == pygame.K_h:
+                    if game.held_piece == None:
+                        game.hold_piece()
+                    else:
+                        game.unhold_piece()
+                if event.key == pygame.K_g:
+                    legal_moves = game.generate_legal_moves(game.board, game.current_piece, game.held_piece, game.next_pieces)
+                    for x in legal_moves:
+                        print(x.piece, x.y, x.x, x.hold)
+                        print(x)
+                        print(...)
+                    print(len(legal_moves))
+                if event.key == pygame.K_u:
+                    game.undo_move()
+
+          # Show next piece info when space is pressed
+
+        # Draw everything on the screen
+            screen.fill(OBSIDIAN)  # Clear the screen with black
+            draw_current_piece_label()
+            draw_next_piece_label()
+            draw_board(env.board)  # Draw the game board
+            draw_score(env.score)
+            draw_current(env.current_piece)
+            draw_next_piece(env.next_pieces[0])
+            draw_held_piece_label()
+            draw_held_piece(env.held_piece)
+            draw_pts_per_move(env.pts_per_move)
+        if show_next_piece_info:
+            game.display_board() 
+            display_next_piece_info(game)
+            display_current_piece_info(game)
+            print(f"The points:{game.score}")
+            print(f"pts per move {game.pts_per_move}")
+            print("."*10)
+              # Display next piece info
+            show_next_piece_info = False  # Reset flag after displaying info
+        pygame.display.flip()  # Update the screen
+        clock.tick(30)  # Limit to 30 frames per second
+
+    pygame.quit()  # Quit the game when the loop end
+"""
