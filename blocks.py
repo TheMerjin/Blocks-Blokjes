@@ -587,8 +587,12 @@ def learn(minibatch, batch_size):
             max_next_Q = max(next_state_Q_values)  
             target_Q_val = minibatch[2] + gamma * max_next_Q
         target_q_vals.append(target_Q_val)
+        predicted_vals = []
     for sample in minibatch:
-        pass# add more here mainly about finding predicted vals of Q network for each state :)
+        for state, action, reward, next_state, done in sample:
+            predicted_val = Q.forward(state)
+        predicted_vals.append(predicted_val)
+         #add more here mainly about finding predicted vals of Q network for each state :)
     #find loss then preform gradient descent using loss
 
     
