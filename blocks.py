@@ -20,10 +20,7 @@ HUSHED_SKY = (155, 168, 183)
 # Set window position (e.g., x=100, y=100 pixels from top-left corner)
 os.environ['SDL_VIDEO_WINDOW_POS'] = "0,0"
 # Initialize Pygame
-pygame.init()
-pygame.mixer.init()
-MUSIC_END_EVENT = pygame.USEREVENT + 1
-pygame.mixer.music.set_endevent(MUSIC_END_EVENT)
+
 
 # Start with a random song
 
@@ -45,9 +42,7 @@ WINDOW_WIDTH = BOARD_WIDTH + MARGIN + NEXT_PIECES_WIDTH
 WINDOW_HEIGHT = 100 * BOARD_SIZE+ 200
 
 # Set up display
-screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-pygame.display.set_caption("Pygame Board Game with Next Pieces")
-font = pygame.font.SysFont(None, 24)
+
 
 # Define colors
 
@@ -95,8 +90,7 @@ class Game:
         self.check_if_board_cleared()
 
         reward = self.pts_per_move*10 + 0 if len(self.move_list) < 0 else abs(np.count_nonzero(self.board == 1 ) - abs(np.count_nonzero(self.board == 0)))
-        print(f" reward: {reward}")
-        return self.board, reward, self.done
+        return self.board, reward, self.done, self.pts_per_move
     def undo_move(self):
         try:
             last_move = self.move_list.pop()
@@ -518,32 +512,81 @@ def softmax(x):
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
+def derivative_relu(Z):
+    return Z > 0
 
 
 
 class Q_Network():
     def __init__(self,arch):
-        self.W1 = np.random.randn(arch[1], arch[0]) * 0.01
+        self.W1 = np.random.randn(arch[1], arch[0]) * np.sqrt(2.0/arch[0])
         self.b1 = np.zeros((arch[1], 1))
-        self.W2 = np.random.randn(arch[2], arch[1]) * 0.01
-        self.b2 = np.zeros((arch[2],1))
+        self.W2 = np.random.randn(arch[2], arch[1]) * np.sqrt(2.0/arch[1])
+        self.b2 = np.zeros((arch[2], 1))
+        self.W3 = np.random.randn(arch[3], arch[2]) * np.sqrt(2.0/arch[2])
+        self.b3 = np.zeros((arch[3], 1))
     def forward(self, input):
-        A1 = np.dot(self.W1, input) + self.b1
-        Z1 = relu(A1)
-        Z2 = np.dot(self.W2, Z1) + self.b2
-        return Z2
+
+        Z1 = np.dot(self.W1, input) + self.b1
+
+        A1 = relu(Z1)
+        Z2 = np.dot(self.W2, A1) + self.b2
+        A2 = relu(Z2)
+        Z3 = np.dot(self.W3, A2) + self.b3 
+        A3 = Z3 # no activation function we want raw values
+        return Z1, A1, Z2, A2, Z3 , A3
     def get_weights(self):
-        return self.W1, self.b1, self.W2, self.b2
+        return self.W1, self.b1, self.W2, self.b2, self.W3, self.b3
     def set_weights(self, x):
         self.W1 = x[0]
         self.b1 = x[1]
         self.W2 = x[2]
         self.b2 = x[3]
-    def back_propogate(self):
-        pass
+        self.W3 = x[4] 
+        self.b3 = x[5]
+    def back_propogate(self, Z1, A1, Z2, A2, Z3, A3, state, target):
+        m = state.shape[1]
+        # Clip gradients to prevent explosion
+        dZ3 = np.clip(A3 - target, -1e6, 1e6)
+
+       
+        
+        dZ2 = np.dot(self.W3.T, dZ3) * derivative_relu(Z2)
+        dZ2 = np.nan_to_num(dZ2, nan=0.0)
+        dZ1 = np.dot(self.W2.T, dZ2) * derivative_relu(Z1)
+        
+        dW3 = (1/m) * np.dot(dZ3, A2.T)
+        dW2 = (1/m) * np.dot(dZ2, A1.T)
+        
+         # ReLU derivative
+        dW1 = (1/m) * np.dot(dZ1, state.T)
+        
+        # Clip gradients
+        dW1 = np.clip(dW1, -1.0, 1.0)
+        dW2 = np.clip(dW2, -1.0, 1.0)
+        dW3 = np.clip(dW3, -1.0, 1.0)
+        
+        db1 = (1/m) * np.sum(dZ1, axis=1, keepdims=True)
+        db2 = (1/m) * np.sum(dZ2, axis=1, keepdims=True)
+        db3 = (1/m) * np.sum(dZ3, axis = 1, keepdims= True)
+    
+        return dW1, dW2, dW3, db1, db2, db3
+    def weight_update(self, dW1, dW2, dW3,  db1, db2, db3, alpha):
+        self.W1 -= alpha * np.nan_to_num(dW1, nan=0.0, posinf=1.0, neginf=-1.0)
+        self.W2 -= alpha * np.nan_to_num(dW2, nan=0.0, posinf=1.0, neginf=-1.0)
+        self.W3 -= alpha * np.nan_to_num(dW3, nan=0.0, posinf=1.0, neginf=-1.0)
+        self.b1 -= alpha * np.nan_to_num(db1, nan=0.0, posinf=1.0, neginf=-1.0)
+        self.b2 -= alpha * np.nan_to_num(db2, nan=0.0, posinf=1.0, neginf=-1.0)
+        self.b3 -= alpha * np.nan_to_num(db3, nan=0.0, posinf=1.0, neginf=-1.0)
+
+        return self.W1, self.b1, self.W2, self.b2, self.W3, self. b3
+        
+
+        
+    
 
 
-arch = [74, 60, 50]
+arch = [74, 120, 60, 50]
 Q = Q_Network(arch)
 
 def one_hot_held(env):
@@ -554,7 +597,6 @@ def one_hot_held(env):
         for x in range(12):
             if env.held_piece.__class__ == env.piece_types[x].__class__:
                 vector[x] = 1
-    print(vector)
     return vector
 
 def one_hot_next_pieces(env):
@@ -576,22 +618,82 @@ def update_target(target):
 
 
 
-def learn(minibatch, batch_size):
-    states, actions, rewards, next_states, dones = zip(*minibatch)
-    target_q_vals = []
+def learn(minibatch, batch_size, gamma = 1, alpha = 0.05):
+    #forward returns  A1, Z1, Z2, A2
+    #we need  Z1, A1,Z2, A2, state, target
+    #minibatch is composed of q_state, best_idx, reward, convert_state_to_vec(nxt_state,env), done 
+    states = []
+    q_targets = []
+    Z1_batch = []
+    A1_batch = []
+    Z2_batch = []
+    A2_batch = []
+    Z3_batch = []
+    A3_batch = []
+    states = np.hstack([sample[0] for sample in minibatch]) 
     for sample in minibatch:
-        if minibatch[4]:
-            target_Q_val = minibatch[2]
+        state = sample[0]
+        q_state = state # Ensure q_state is always defined
+        if sample[4]:
+            # Terminal state: target is just the reward
+            q_target = sample[2]
+
+            Z1, A1, Z2, A2, Z3 , A3 = Q_target.forward(q_state)
+            Z1_batch.append(Z1)
+            A1_batch.append(A1)
+            Z2_batch.append(Z2)
+            A2_batch.append(A2)
+            Z3_batch.append(Z3)
+            A3_batch.append(A3)
+            
+            # Create a target vector with the same shape as A2.
+            # For terminal states, you might set all values to 0 and then set the chosen index to the reward.
+            target_vector = copy.copy(A3)
+            # Define best_idx appropriately; if there's no best action in terminal state,
+            # you could choose an index (for instance, 0) or handle it differently.
+            best_idx = 0  # or some logic to choose a default
+            target_vector[best_idx] = q_target
+            q_targets.append(target_vector)
         else:
-            next_state_Q_values = Q_target.forward(minibatch[3])  
-            max_next_Q = max(next_state_Q_values)  
-            target_Q_val = minibatch[2] + gamma * max_next_Q
-        target_q_vals.append(target_Q_val)
-        predicted_vals = []
-    for sample in minibatch:
-        for state, action, reward, next_state, done in sample:
-            predicted_val = Q.forward(state)
-        predicted_vals.append(predicted_val)
+            best_idx = sample[1] 
+            q_state = sample[0]
+            Z1, A1, Z2, A2, Z3 , A3 = Q_target.forward(q_state)
+            Z1_batch.append(Z1)
+            A1_batch.append(A1)
+            Z2_batch.append(Z2)
+            A2_batch.append(A2)
+            Z3_batch.append(Z3)
+            A3_batch.append(A3)
+            if np.isnan(A3).any():
+                print("NaN detected in A2 before update")
+            if not (0 <= best_idx < len(A3)):
+                print(f"Invalid best_idx: {best_idx}")
+            future_reward = max(A3)
+            reward = sample[2]
+            q_target = reward + future_reward
+            q_append = copy.copy(A3)
+            q_append[best_idx] = q_target
+            q_targets.append(q_append)
+    
+    
+    Z1 = np.hstack(Z1_batch)  # (60, batch_size)
+    A1 = np.hstack(A1_batch)  # (60, batch_size)
+    Z2 = np.hstack(Z2_batch)  # (50, batch_size)
+    A2 = np.hstack(A2_batch)
+    Z3 = np.hstack(Z3_batch)  # (50, batch_size)
+    A3 = np.hstack(A3_batch)  # (50, batch_size)
+    targets = np.hstack(q_targets)
+    targets = np.nan_to_num(targets, nan=0.0, posinf=1e6, neginf=-1e6)
+    
+
+    dW1, dW2, dW3, db1, db2, db3 = Q.back_propogate(Z1, A1, Z2, A2, Z3, A3, states, targets)
+        
+    Q.weight_update(dW1, dW2, dW3,  db1, db2, db3, alpha)
+    
+            
+        
+
+    
          #add more here mainly about finding predicted vals of Q network for each state :)
     #find loss then preform gradient descent using loss
 
@@ -602,7 +704,7 @@ def learn(minibatch, batch_size):
 Q_target = copy.deepcopy(Q) #Q' NeuralNetwork(same parms as above) then update_target(Q_target.NN) will also work
 
 # Replay Memory
-D = deque(maxlen=10000) # if D==maxlen and we append new data oldest one will get removed
+D = deque(maxlen=100000) # if D==maxlen and we append new data oldest one will get removed
 
 
 # Epsilon
@@ -664,16 +766,18 @@ def convert_state_to_vec(state, env):
 
 
 
-def train(num_episode=100,batch_size=32,C=10,ep=10):
+def train(num_episode=10000,batch_size=75,C=10,ep=  20):
     running = True
-    clock = pygame.time.Clock()
     global epsilon,best_score
     steps = 0
     env = Game()
+    num_episodes = 100  # Moving average window
+    episode_rewards = [] 
     
     for i in range(1,num_episode+1):
         episode_reward = 0
         episode_loss = 0
+        episode_score = 0
 
 
         # Sample Phase
@@ -681,82 +785,64 @@ def train(num_episode=100,batch_size=32,C=10,ep=10):
         nxt_state,_ = env.reset()
         env.pts_per_move = 1
         while not done:
-            screen.fill(OBSIDIAN)  # Clear the screen with black
-            draw_current_piece_label()
-            draw_next_piece_label()
-            draw_board(env.board)  # Draw the game board
-            draw_score(env.score)
-            draw_current(env.current_piece)
-            draw_next_piece(env.next_pieces[0])
-            draw_held_piece_label()
-            draw_held_piece(env.held_piece)
-            env.check_if_board_cleared()
-            try:
-                draw_held_piece(env.held_piece)
-            except AttributeError:
-                pass
-            pygame.display.flip()  # Update the screen
-            clock.tick(30)
+            
+            
             state = nxt_state
-            q_state = None
             epsilon = max(epsilon_min,epsilon*epsilon_decay) # e decay
 
             # e-greedy(Q)
             if np.random.rand() < epsilon: 
                 legal_moves = env.generate_legal_moves(env.board, env.current_piece, env.held_piece, env.next_pieces)
                 if len(legal_moves) == 0:
+                    episode_score += env.score
                     done = True
+
                     break;
                    
                 action = np.random.choice(legal_moves)
                 best_idx = (int(action.hold)+1)* (action.y*5 + action.x)
-                print("random move")
             else:
-                print("next move:")
                 legal_moves = env.generate_legal_moves(env.board, env.current_piece, env.held_piece, env.next_pieces)
                 if len(legal_moves) == 0:
+                    episode_score += env.score
                     done = True
                     break;
-                    
+                global q_state
                 q_state = convert_state_to_vec(state, env)
-                action = Q.forward(q_state).flatten()
+                action = Q.forward(q_state)[3].flatten()
                 action, best_idx = convert_vec_to_move(action, legal_moves,env)
-                print("coordinates of placement",action.x+1, action.y+1)
-                print("\n")
-                if action.hold == True:
-                    print("The held piece")
-                    print(env.held_piece if env.held_piece is not None else env.next_pieces[0])
-                    print("\n")
-                print(action.return_params())
-                print("\n")
-                print(env.score)
-
-            nxt_state,reward,done = env.play_move(action)
+                
+            if env.score > best_score:
+                best_score = env.score
+            nxt_state,reward,done, score = env.play_move(action)
             episode_reward += reward
+            episode_score += score
             D.append((q_state, best_idx, reward, convert_state_to_vec(nxt_state,env), done))
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
                     
             # Learining Phase
 
             if len(D) >= batch_size:
                 minibatch = random.sample(D, batch_size)
-                learn(minibatch, batch_size)
+                learn(minibatch, batch_size, 0.1)
+                
             steps+=1
             
             if steps%C ==0: update_target(Q_target)
-        if episode_reward > best_score:
-            best_score = episode_reward
+        episode_rewards.append(episode_score)
+        if i % ep == 0:
+            # Calculate the moving average of rewards over the last 'num_episodes' episodes
+            if len(episode_rewards) > num_episodes:
+                episode_rewards.pop(0)  # Keep the last 'num_episodes' rewards
+            average_reward = sum(episode_rewards) / len(episode_rewards)
+            print("\n" * 2)
+            print(f"Episode: {i} Reward: {episode_reward} and best score: {best_score} and done: {done}")
+            print("Average Reward:", average_reward)
+    return Q.get_weights()
 
-        if i%ep==0: 
-            print("\n"*2)
-            print(f"Episode: {i} Reward: {episode_reward} and best score: {best_score} and {done}")
 
 
 
-
-train()
+W1, b1, W2, b2, W3, b3 = train()
 
 
 
