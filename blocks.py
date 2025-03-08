@@ -10,6 +10,9 @@ from copy import deepcopy
 import time
 import os
 
+np.random.seed(42)
+random.seed(42)
+
 OBSIDIAN = (20, 18, 35)       # Backgrounds, large elements
 AMETHYST = (88, 47, 161)    # Buttons, accents
 GOLD = (193, 154, 107)       # Text, borders, fine details
@@ -42,9 +45,17 @@ WINDOW_WIDTH = BOARD_WIDTH + MARGIN + NEXT_PIECES_WIDTH
 WINDOW_HEIGHT = 100 * BOARD_SIZE+ 200
 
 # Set up display
+pygame.init()
 
-
+# Game setup
+screen = pygame.display.set_mode((1000, 800))  # Screen dimensions
+pygame.display.set_caption('Your Game')  # Set game window title
+clock = pygame.time.Clock()
+MUSIC_END_EVENT = pygame.USEREVENT + 1  # Custom event for music end
+pygame.mixer.music.set_endevent(MUSIC_END_EVENT)
 # Define colors
+
+font = pygame.font.SysFont(None, 24)
 
 BLACK = (0, 0, 0)
 BLUE = (0, 0, 255)
@@ -52,6 +63,7 @@ BLUE = (0, 0, 255)
 class Game:
     def __init__(self):
         """Initializes the game board and other attributes."""
+
         self.board = np.zeros((5, 5))  # Empty 5x5 board
         self.pts_per_move = 1  # Points per valid move
         self.score = 0  # Current score
@@ -81,16 +93,22 @@ class Game:
         self.next_pieces.insert(0,self.current_piece)
         self.current_piece = self.held_piece
         self.held_piece = None
+
     def play_move(self, move):
-        if move.hold == True:
+        if move.hold:
             self.hold_piece()
-        self.place_piece(move.piece, move.x, move.y,move.pts_per_move)
+        self.place_piece(move.piece, move.x, move.y, move.pts_per_move)
         self.move_list.append(move)
         self.pts_per_move_list.append(self.pts_per_move)
-        self.check_if_board_cleared()
-
-        reward = self.pts_per_move*10 + 0 if len(self.move_list) < 0 else abs(np.count_nonzero(self.board == 1 ) - abs(np.count_nonzero(self.board == 0)))
-        return self.board, reward, self.done, self.pts_per_move
+        
+        num_zeros = len(self.board) - np.sum(self.board)
+        
+        # Compute the raw reward based on your criteria. 
+        raw_reward = self.pts_per_move + abs(np.sum(self.board) - num_zeros)
+        normalized_reward = -np.cos(raw_reward * np.pi/ 26)
+        
+        
+        return self.board, normalized_reward, self.done, self.pts_per_move
     def undo_move(self):
         try:
             last_move = self.move_list.pop()
@@ -232,7 +250,8 @@ class Game:
         return False
     def check_if_board_cleared(self):
         if len(np.unique(self.board)) == 1 and self.score!= 0:
-            self.pts_per_move += 1
+            return True
+        return False
 
     def display_board(self):
         """Displays the current board on the console."""
@@ -501,19 +520,33 @@ def draw_next_piece(piece):
 # Main game loop
 
 
-
 def relu(x):
     return np.maximum(0, x)
+
 
 def softmax(x):
     exp_x = np.exp(x - np.max(x))
     return exp_x / exp_x.sum(axis=0, keepdims=True)
 
+
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
+
 def derivative_relu(Z):
     return Z > 0
+
+def huber_loss(y_true, y_pred, delta=1.0):
+    error = y_pred - y_true
+    is_small_error = np.abs(error) <= delta
+    squared_loss = 0.5 * error ** 2
+    linear_loss = delta * (np.abs(error) - 0.5 * delta)
+    return np.where(is_small_error, squared_loss, linear_loss)
+
+
+def derivative_huber(error, delta=1.0):
+    # error is A3 - target
+    return np.where(np.abs(error) <= delta, error, delta * np.sign(error))
 
 
 
@@ -526,9 +559,7 @@ class Q_Network():
         self.W3 = np.random.randn(arch[3], arch[2]) * np.sqrt(2.0/arch[2])
         self.b3 = np.zeros((arch[3], 1))
     def forward(self, input):
-
         Z1 = np.dot(self.W1, input) + self.b1
-
         A1 = relu(Z1)
         Z2 = np.dot(self.W2, A1) + self.b2
         A2 = relu(Z2)
@@ -547,7 +578,8 @@ class Q_Network():
     def back_propogate(self, Z1, A1, Z2, A2, Z3, A3, state, target):
         m = state.shape[1]
         # Clip gradients to prevent explosion
-        dZ3 = np.clip(A3 - target, -1e6, 1e6)
+        error = (A3- target)
+        dZ3 = derivative_huber(error, 100)
 
        
         
@@ -562,9 +594,9 @@ class Q_Network():
         dW1 = (1/m) * np.dot(dZ1, state.T)
         
         # Clip gradients
-        dW1 = np.clip(dW1, -1.0, 1.0)
-        dW2 = np.clip(dW2, -1.0, 1.0)
-        dW3 = np.clip(dW3, -1.0, 1.0)
+        dW1 = np.clip(dW1, -5.0, 5.0)
+        dW2 = np.clip(dW2, -5.0, 5.0)
+        dW3 = np.clip(dW3, -5.0, 5.0)
         
         db1 = (1/m) * np.sum(dZ1, axis=1, keepdims=True)
         db2 = (1/m) * np.sum(dZ2, axis=1, keepdims=True)
@@ -586,7 +618,7 @@ class Q_Network():
     
 
 
-arch = [74, 120, 60, 50]
+arch = [74, 256, 128, 50]
 Q = Q_Network(arch)
 
 def one_hot_held(env):
@@ -614,11 +646,9 @@ def one_hot_next_pieces(env):
 def update_target(target):
     target.set_weights(Q.get_weights())
     return 0
-    
 
 
-
-def learn(minibatch, batch_size, gamma = 1, alpha = 0.05):
+def learn(minibatch, batch_size, gamma = 1, alpha = 0.1):
     #forward returns  A1, Z1, Z2, A2
     #we need  Z1, A1,Z2, A2, state, target
     #minibatch is composed of q_state, best_idx, reward, convert_state_to_vec(nxt_state,env), done 
@@ -648,7 +678,7 @@ def learn(minibatch, batch_size, gamma = 1, alpha = 0.05):
             
             # Create a target vector with the same shape as A2.
             # For terminal states, you might set all values to 0 and then set the chosen index to the reward.
-            target_vector = copy.copy(A3)
+            target_vector = copy.deepcopy(A3)
             # Define best_idx appropriately; if there's no best action in terminal state,
             # you could choose an index (for instance, 0) or handle it differently.
             best_idx = 0  # or some logic to choose a default
@@ -670,8 +700,8 @@ def learn(minibatch, batch_size, gamma = 1, alpha = 0.05):
                 print(f"Invalid best_idx: {best_idx}")
             future_reward = max(A3)
             reward = sample[2]
-            q_target = reward + future_reward
-            q_append = copy.copy(A3)
+            q_target = reward + 0.95* future_reward
+            q_append = copy.deepcopy(A3)
             q_append[best_idx] = q_target
             q_targets.append(q_append)
     
@@ -685,7 +715,7 @@ def learn(minibatch, batch_size, gamma = 1, alpha = 0.05):
     targets = np.hstack(q_targets)
     targets = np.nan_to_num(targets, nan=0.0, posinf=1e6, neginf=-1e6)
     
-
+    loss = huber_loss(targets, A3, 200)
     dW1, dW2, dW3, db1, db2, db3 = Q.back_propogate(Z1, A1, Z2, A2, Z3, A3, states, targets)
         
     Q.weight_update(dW1, dW2, dW3,  db1, db2, db3, alpha)
@@ -708,9 +738,9 @@ D = deque(maxlen=100000) # if D==maxlen and we append new data oldest one will g
 
 
 # Epsilon
-epsilon = 0.1
-epsilon_min = 0.01
-epsilon_decay = 0.995
+epsilon = 1
+epsilon_min = 0.02
+epsilon_decay = 0.9995
 
 # Gamma
 gamma = 0.95
@@ -766,13 +796,16 @@ def convert_state_to_vec(state, env):
 
 
 
-def train(num_episode=10000,batch_size=75,C=10,ep=  20):
+def train(num_episode=100000,batch_size= 256,C=100,ep= 20):
     running = True
-    global epsilon,best_score
+    global epsilon, best_score
     steps = 0
     env = Game()
     num_episodes = 100  # Moving average window
     episode_rewards = [] 
+    current_song = random.choice(play_lists)
+    pygame.mixer.music.load(current_song)
+    pygame.mixer.music.play()
     
     for i in range(1,num_episode+1):
         episode_reward = 0
@@ -784,6 +817,7 @@ def train(num_episode=10000,batch_size=75,C=10,ep=  20):
         done = False
         nxt_state,_ = env.reset()
         env.pts_per_move = 1
+        q_state = None
         while not done:
             
             
@@ -801,13 +835,13 @@ def train(num_episode=10000,batch_size=75,C=10,ep=  20):
                    
                 action = np.random.choice(legal_moves)
                 best_idx = (int(action.hold)+1)* (action.y*5 + action.x)
+                q_state = convert_state_to_vec(state, env)
             else:
                 legal_moves = env.generate_legal_moves(env.board, env.current_piece, env.held_piece, env.next_pieces)
                 if len(legal_moves) == 0:
                     episode_score += env.score
                     done = True
                     break;
-                global q_state
                 q_state = convert_state_to_vec(state, env)
                 action = Q.forward(q_state)[3].flatten()
                 action, best_idx = convert_vec_to_move(action, legal_moves,env)
@@ -818,25 +852,45 @@ def train(num_episode=10000,batch_size=75,C=10,ep=  20):
             episode_reward += reward
             episode_score += score
             D.append((q_state, best_idx, reward, convert_state_to_vec(nxt_state,env), done))
-                    
+            screen.fill(OBSIDIAN)  # Clear the screen with black
+            draw_current_piece_label()
+            draw_next_piece_label()
+            draw_board(env.board)  # Draw the game board
+            draw_score(env.score)
+            draw_current(env.current_piece)
+            draw_next_piece(env.next_pieces[0])
+            draw_held_piece_label()
+            draw_held_piece(env.held_piece)
+            draw_pts_per_move(env.pts_per_move)
             # Learining Phase
 
             if len(D) >= batch_size:
                 minibatch = random.sample(D, batch_size)
-                learn(minibatch, batch_size, 0.1)
-                
-            steps+=1
+                learn(minibatch, batch_size, 0.001)
+            pygame.display.flip()  # Update the screen
+            clock.tick(1000000)
             
+            steps+=1
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
             if steps%C ==0: update_target(Q_target)
         episode_rewards.append(episode_score)
+        
+            
         if i % ep == 0:
+            average_reward = 0
             # Calculate the moving average of rewards over the last 'num_episodes' episodes
             if len(episode_rewards) > num_episodes:
                 episode_rewards.pop(0)  # Keep the last 'num_episodes' rewards
-            average_reward = sum(episode_rewards) / len(episode_rewards)
+                average_reward = sum(episode_rewards) / len(episode_rewards)
+                
+            
             print("\n" * 2)
             print(f"Episode: {i} Reward: {episode_reward} and best score: {best_score} and done: {done}")
             print("Average Reward:", average_reward)
+            
+        
     return Q.get_weights()
 
 
@@ -845,13 +899,7 @@ def train(num_episode=10000,batch_size=75,C=10,ep=  20):
 W1, b1, W2, b2, W3, b3 = train()
 
 
-
-
-
-
-
-
-
+print(W1, b1, W2, b2, W3, b3)
 
 
 
@@ -944,4 +992,11 @@ def main(env):
         clock.tick(30)  # Limit to 30 frames per second
 
     pygame.quit()  # Quit the game when the loop end
-"""
+test = Game()
+
+main(test)"""
+
+
+
+
+
