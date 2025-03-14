@@ -69,7 +69,7 @@ def learn(minibatch, batch_size, indices, gamma = 1, alpha = 0.1):
             # Terminal state: target is just the reward
             q_target = sample[2]
 
-            Z1, A1, Z2, Q1 = Q_target.forward(q_state)
+            Z1, A1, Z2, A2, Q1 = Q_target.forward(q_state)
             Z1_batch.append(Z1)
             A1_batch.append(A1)
             Z2_batch.append(Z2)
@@ -124,8 +124,15 @@ def learn(minibatch, batch_size, indices, gamma = 1, alpha = 0.1):
     
     
     Q.weight_update(dW1, db1, dW2, db2, dW_value, db_value, dW_adv, db_adv, alpha)
-    print(targets.shape)
-    new_td_errors =  targets - Q.forward(q_state)[4][best_idx]
+    new_Q_batch = []
+    for sample in minibatch:
+        state = sample[0][0]
+        q_state = state
+        Z1, A1, Z2, A2, Q1 = Q_target.forward(q_state)
+        new_Q_batch.append(np.max(Q1))
+    td_targets = np.max(targets, axis = 0)
+
+    new_td_errors = td_targets - new_Q_batch
     update_priorities_in_deque(D, indices, new_td_errors)
     return np.argmax(loss)
     
@@ -153,7 +160,7 @@ def update_priorities_in_deque(deque, indices, new_td_errors):
 Q_target = copy.deepcopy(Q) #Q' NeuralNetwork(same parms as above) then update_target(Q_target.NN) will also work
 
 # Replay Memory
-D = deque(maxlen=10000) # if D==maxlen and we append new data oldest one will get removed
+D = deque(maxlen=100000) # if D==maxlen and we append new data oldest one will get removed
 
 
 # Epsilon
@@ -295,7 +302,6 @@ def train(num_episode=1000,batch_size=128,C=1000, ep= 20, gamma = 1, tau = 0.005
                     episode_score += env.score
                     
                     done = True
-                    print("random")
                     break;
                 action = random.choice(hold_moves)
                 best_idx = (int(action.hold)+1)* (action.y*5 + action.x)

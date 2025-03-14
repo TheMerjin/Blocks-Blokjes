@@ -30,7 +30,6 @@ class Q_Network():
         self.b_adv = np.zeros((arch[3], 1))
         self.W_ba =  np.zeros((arch[3], 1))
     def forward(self, input):
-        print(input.shape, self.W1.shape)
         Z1 = np.dot(self.W1, input) + self.b1
         A1 = relu(Z1)
         Z2 = np.dot(self.W2, A1) + self.b2
