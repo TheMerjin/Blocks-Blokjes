@@ -366,7 +366,7 @@ def update_target(target):
     return 0
 
 
-def learn(minibatch, batch_size, gamma = 1, alpha = 0.1):
+def learn(minibatch, batch_size, indices, gamma = 1, alpha = 0.1):
     #forward returns  A1, Z1, Z2, A2
     #we need  Z1, A1,Z2, A2, state, target
     #minibatch is composed of q_state, best_idx, reward, convert_state_to_vec(nxt_state,env), done 
@@ -438,13 +438,26 @@ def learn(minibatch, batch_size, gamma = 1, alpha = 0.1):
     if random.random() < 0.01:
         print("loss: ",np.argmax(loss))
     dW1, db1, dW2, db2, dW_value, db_value, dW_adv, db_adv = Q.back_propogate(Z1, A1, Z2, A2, Q1, states, targets)
+
     
     
     Q.weight_update(dW1, db1, dW2, db2, dW_value, db_value, dW_adv, db_adv, alpha)
     
+    new_td_errors = []
+    update_priorities_in_deque(D, indices, new_td_errors)
     return np.argmax(loss)
     
-            
+def update_priorities_in_deque(deque, indices, new_td_errors):
+    for x in range(len(indices)):
+        idx = indices[x]
+        (q_state, full_state_cache), best_idx, reward, next_state, done, td_error = deque[idx]
+        new_td_error = new_td_errors[x]
+        deque[idx] = ((q_state, full_state_cache), best_idx, reward, next_state, done, new_td_error)
+
+    
+    
+    
+
         
 
     
@@ -547,7 +560,20 @@ def convert_state_to_vec(state, env):
 
 
 
-
+def sample(deque, batch_size, alpha = 0.6):
+    #what is alpha? alpha determines the uniformity basically like how niormal the distribution is. NEED to tune
+   
+    priorities = [abs(td_error) + 1e-6 for _, _, _, _, _, td_error in deque] 
+    probabilities = [n**alpha for n in priorities]
+    
+    prob_sum = np.sum(probabilities)  
+    probabilities /= prob_sum
+    probabilities = list(probabilities)
+    
+    # so we need the indices and the actual experieces. The indices are needed why? to uodate later
+    indices = np.random.choice(len(deque),size = batch_size, p = probabilities) 
+    experiences = [deque[idx] for idx in indices]
+    return experiences, indices
 def train(num_episode=1000,batch_size=128,C=1000, ep= 20, gamma = 1, tau = 0.005, alpha = 1 ):
     running = True
     global epsilon,best_score
@@ -597,8 +623,8 @@ def train(num_episode=1000,batch_size=128,C=1000, ep= 20, gamma = 1, tau = 0.005
                 legal_moves = env.generate_legal_moves(env.board, env.current_piece, env.held_piece, env.next_pieces)[2]
                 if len(legal_moves) == 0:
                     episode_score += env.score
-                    done = True
-                    break;
+                    done = True 
+                    break; 
                 full_state_cache = [state, env.current_piece, env.held_piece, env.next_pieces, env.pts_per_move]
                 q_state = convert_state_to_vec(state, env)
                 action = Q.forward(q_state)[4].flatten()
@@ -611,7 +637,9 @@ def train(num_episode=1000,batch_size=128,C=1000, ep= 20, gamma = 1, tau = 0.005
             nxt_state,reward,done, score = env.play_move(action)
             episode_reward += reward
             episode_score += score
-            D.append(((q_state, full_state_cache), best_idx, reward, convert_state_to_vec(nxt_state,env), done))
+            nxt_q_values = Q_target.forward(convert_state_to_vec(nxt_state, env))[4]  # Get Q-values
+            td_error = int(abs(reward + gamma * np.max(nxt_q_values) - Q.forward(q_state)[4][best_idx]))
+            D.append(((q_state, full_state_cache), best_idx, reward, convert_state_to_vec(nxt_state, env), done, td_error))
             screen.fill(OBSIDIAN)  # Clear the screen with black
             draw_current_piece_label()
             draw_next_piece_label()
@@ -625,8 +653,8 @@ def train(num_episode=1000,batch_size=128,C=1000, ep= 20, gamma = 1, tau = 0.005
             # Learining Phase
 
             if len(D) >= batch_size:
-                minibatch = random.sample(D, batch_size)
-                loss = learn(minibatch, batch_size, gamma, alpha = lr)
+                minibatch, indices = sample(D, batch_size= batch_size)
+                loss = learn(minibatch, batch_size,indices, gamma = gamma,  alpha = lr)
                 episode_losses.append(loss)
             pygame.display.flip()  # Update the screen
             clock.tick(1000000)
