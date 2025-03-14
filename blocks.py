@@ -7,11 +7,11 @@ import random
 from collections import deque
 import copy
 from copy import deepcopy
-import time
 import os
-
-np.random.seed(42)
-random.seed(42)
+from blocks_env import *
+np.random.seed(421)
+random.seed(421)
+np.set_printoptions(threshold=np.inf, linewidth=np.inf)
 
 OBSIDIAN = (20, 18, 35)       # Backgrounds, large elements
 AMETHYST = (88, 47, 161)    # Buttons, accents
@@ -60,333 +60,7 @@ font = pygame.font.SysFont(None, 24)
 BLACK = (0, 0, 0)
 BLUE = (0, 0, 255)
 
-class Game:
-    def __init__(self):
-        """Initializes the game board and other attributes."""
 
-        self.board = np.zeros((5, 5))  # Empty 5x5 board
-        self.pts_per_move = 1  # Points per valid move
-        self.score = 0  # Current score
-        self.held_piece = None  # No piece held initially
-        self.current_piece = self.generate_random_piece()  # Generate the first piece
-        next_piece = None
-        self.next_pieces = [self.generate_random_piece()]
-        for _ in range(11):
-            while self.next_pieces[-1] == next_piece:
-                next_piece = self.generate_random_piece()
-            self.next_pieces.append(next_piece)
-        self.next_pieces = [self.generate_random_piece() for _ in range(11)]
-        self.move_list = []
-        self.pts_per_move_list = [1]
-        self.done = False
-        self.piece_types = pieces = [TwoPieceHorz(), ThreePiece(), TwoPieceVert(), ThreePiecePlus1Vert(),
-                  OneLeftFourDown(), OnePiece(), HingePieceLeft(), OneVertPlusThreePiece(),
-                  FivePiece(), OneLeftMidPlusThreeVert(), HingePieceRight(), ThreeHorzPlusTwoHorzDown()]
-    def hold_piece(self):
-        if self.held_piece is None:
-            self.held_piece =   self.current_piece
-            self.current_piece = self.next_pieces.pop(0)  # Get the next piece
-            self.next_pieces.append(self.generate_random_piece())
-        else:
-            self.unhold_piece()
-    def unhold_piece(self):
-        self.next_pieces.insert(0,self.current_piece)
-        self.current_piece = self.held_piece
-        self.held_piece = None
-
-    def play_move(self, move):
-        if move.hold:
-            self.hold_piece()
-        self.place_piece(move.piece, move.x, move.y, move.pts_per_move)
-        self.move_list.append(move)
-        self.pts_per_move_list.append(self.pts_per_move)
-        
-        num_zeros = len(self.board) - np.sum(self.board)
-        
-        # Compute the raw reward based on your criteria. 
-        raw_reward = self.pts_per_move + abs(np.sum(self.board) - num_zeros)
-        normalized_reward = -np.cos(raw_reward * np.pi/ 26)
-        
-        
-        return self.board, normalized_reward, self.done, self.pts_per_move
-    def undo_move(self):
-        try:
-            last_move = self.move_list.pop()
-        except IndexError:
-            print("Cannot undo Move: This is the first move")
-        self.next_pieces.insert(0,self.current_piece)
-        self.current_piece = last_move.piece
-        self.pts_per_move_list.pop()
-        try: 
-            self.pts_per_move = self.pts_per_move_list[-1]
-        except IndexError:
-            self.pts_per_move = 1
-        self.score -= last_move.pts_per_move
-        self.un_place_piece(self.current_piece, last_move.x, last_move.y, last_move.pts_per_move)
-    def un_place_piece(self,piece, x, y, pts_per_move):
-        if self.can_place_piece(piece, x, y):
-            shape = piece.get_shape()
-            rows, cols = shape.shape
-            
-            for i in range(rows):
-                for j in range(cols):
-                    if shape[i, j] != 0: # Place non-zero parts of the piece
-                        if shape[i, j] == 3:
-                            if self.board[y + i, x + j] != 1:
-                                self.board[y + i, x + j] = 1
-                            else:
-                                self.board[y+i, x+j] = 0
-
-                        else:
-                            if self.board[y + i, x + j] != 1:
-                                self.board[y + i, x + j] = 1
-                            else:
-                                self.board[y+i, x+j] = 0
-                            
-                            
-                            
-            self.board[self.board  == 3] = 1
-                        
-             # Generate a new piece for the queue
-            return True
-        return False
-    
-
-        
-        
-    def move_is_legal(self,move):
-        if move in self.generate_legal_moves(self.board, self.current_piece, self.held_piece, self.next_pieces):
-            return True
-        return False
-    def generate_random_piece(self):
-        """Generates a random piece from a list of defined pieces."""
-        pieces = [TwoPieceHorz(), ThreePiece(), TwoPieceVert(), ThreePiecePlus1Vert(),
-                  OneLeftFourDown(), OnePiece(), HingePieceLeft(), OneVertPlusThreePiece(),
-                  FivePiece(), OneLeftMidPlusThreeVert(), HingePieceRight(), ThreeHorzPlusTwoHorzDown()]
-        return random.choice(pieces)
-
-    def can_place_piece(self, piece, x, y):
-        """Checks if a piece can be placed on the board at coordinates (x, y)."""
-        shape = piece.shape
-        piece_height, piece_width = shape.shape
-        board_height, board_width = self.board.shape
-        if x < 0 or y < 0 or x + piece_width > board_width or y + piece_height > board_height:
-            return False  # Piece is out of bounds
-        
-        center_coords = np.argwhere(shape == 3)  # Find center of the piece
-        if center_coords.size == 0:
-            return False  # No center found in the piece
-        
-        center_y, center_x = center_coords[0]
-        target_color = self.board[y + center_y, x + center_x]
-        
-        for i in range(piece_height):
-            for j in range(piece_width):
-                if shape[i, j] != 0:  # Non-zero values indicate piece cells
-                    if self.board[y + i, x + j] != target_color:  # Check for color mismatch
-                        return False
-
-        return True # Piece can be placed
-    def generate_legal_moves(self,board, current_piece, held_piece, next_pieces):
-            test_game = deepcopy(self)  # Use current instance's state
-            legal_moves = []
-            
-            # Check moves without holding
-            for x in range(5):
-                for y in range(5):
-                    if self.can_place_piece(current_piece, x, y):
-                        legal_moves.append(Move(current_piece, x, y, hold=False))
-            
-            # Check moves with holding (swap current and held pieces)
-            if held_piece is None:
-                # Simulate holding current piece and taking next piece
-                test_game.hold_piece()
-                new_current = test_game.current_piece
-                for x in range(5):
-                    for y in range(5):
-                        if test_game.can_place_piece(new_current, x, y):
-                            legal_moves.append(Move(new_current, x, y, hold=True))
-            else:
-                # If already holding, simulate swapping
-                test_game.unhold_piece()
-                for x in range(5):
-                    for y in range(5):
-                        if test_game.can_place_piece(test_game.current_piece, x, y):
-                            legal_moves.append(Move(test_game.current_piece, x, y, hold=True))
-            
-            if not legal_moves:
-                self.done = True
-            return legal_moves
-            
-    def place_piece(self, piece, x, y, pts_per_move):
-        """Places the piece on the board if allowed."""
-        if self.can_place_piece(piece, x, y):
-            shape = piece.get_shape()
-            rows, cols = shape.shape
-            
-            for i in range(rows):
-                for j in range(cols):
-                    if shape[i, j] != 0: # Place non-zero parts of the piece
-                        if shape[i, j] == 3:
-                            if self.board[y + i, x + j] != 1:
-                                self.board[y + i, x + j] = 1
-                            else:
-                                self.board[y+i, x+j] = 0
-
-                        else:
-                            if self.board[y + i, x + j] != 1:
-                                self.board[y + i, x + j] = 1
-                            else:
-                                self.board[y+i, x+j] = 0
-                            
-                            
-                            
-            self.board[self.board  == 3] = 1
-                        
-            self.score += pts_per_move  # Increase score on valid placement
-            self.current_piece = self.next_pieces.pop(0)  # Get the next piece
-            self.next_pieces.append(self.generate_random_piece())  # Generate a new piece for the queue
-            return True
-        return False
-    def check_if_board_cleared(self):
-        if len(np.unique(self.board)) == 1 and self.score!= 0:
-            return True
-        return False
-
-    def display_board(self):
-        """Displays the current board on the console."""
-        print(self.board)
-
-    def reset(self):
-        """Resets the game to its initial state."""
-        self.board = np.zeros((5, 5))  # Empty 5x5 board
-        self.pts_per_move = 1  # Points per valid move
-        self.score = 0  # Current score
-        self.held_piece = None  # No piece held initially
-        self.current_piece = self.generate_random_piece()  # Generate the first piece
-        self.next_pieces = [self.generate_random_piece() for _ in range(11)]
-        self.move_list = []
-        self.pts_per_move_list = []
-        self.done = False
-        self.piece_types = pieces = [TwoPieceHorz(), ThreePiece(), TwoPieceVert(), ThreePiecePlus1Vert(),
-                  OneLeftFourDown(), OnePiece(), HingePieceLeft(), OneVertPlusThreePiece(),
-                  FivePiece(), OneLeftMidPlusThreeVert(), HingePieceRight(), ThreeHorzPlusTwoHorzDown()]
-        return self.board, self.current_piece
-class Move():
-    def __init__(self, piece, x,y,pts_per_move = 1,hold= False):
-        self.piece = piece
-        self.x = x
-        self.y = y
-        self.hold = hold
-        self.pts_per_move = pts_per_move
-    def return_params(self):
-        print(self.piece, self.x, self.y, self.hold, self.pts_per_move)
-    def __eq__(self, other):
-        return (self.x == other.x and 
-                self.y == other.y and 
-                self.hold == other.hold and 
-                self.piece.__class__ == other.piece.__class__) 
-class Piece:
-    def __init__(self, shape):
-        """Piece class initializes with a shape (2D numpy array)."""
-        self.shape = np.array(shape)
-
-    def rotate(self):
-        """Rotates the piece 90 degrees clockwise."""
-        self.shape = np.rot90(self.shape, k=-1)
-
-    def get_shape(self):
-        """Returns the shape of the piece."""
-        return self.shape
-
-    def get_name(self):
-        """Returns the class name of the piece."""
-        return self.__class__.__name__
-
-    def __repr__(self):
-        """String representation of the piece."""
-        return f"{self.get_name()}(shape=\n{self.shape})"
-
-# Define individual pieces as subclasses of the Piece class
-class TwoPieceHorz(Piece):
-    def __init__(self):
-        shape = [[1, 3]]  # Horizontal piece
-        super().__init__(shape)
-
-    def rotate(self):
-        """Rotation switches horizontal to vertical."""
-        self.shape = np.rot90(self.shape, k=-1)
-
-class ThreePiece(Piece):
-    def __init__(self):
-        shape = [[1, 1, 3]]  # Horizontal piece with three blocks
-        super().__init__(shape)
-
-class TwoPieceVert(Piece):
-    def __init__(self):
-        shape = [[1], [3]]  # Vertical piece
-        super().__init__(shape)
-
-class ThreePiecePlus1Vert(Piece):
-    def __init__(self):
-        shape = [[0, 0, 1], [1, 1, 3]]  # L-shaped piece
-        super().__init__(shape)
-
-class OneLeftFourDown(Piece):
-    def __init__(self):
-        shape = [[0, 1], [0, 1], [0, 1], [1, 3]]  # Vertical piece with a single block on the side
-        super().__init__(shape)
-
-class OnePiece(Piece):
-    def __init__(self):
-        shape = [[3]]  # Single block piece
-        super().__init__(shape)
-
-class HingePieceLeft(Piece):
-    def __init__(self):
-        shape = [[0, 1], [1, 3]]  # L-shaped hinge piece
-        super().__init__(shape)
-
-class OneVertPlusThreePiece(Piece):
-    def __init__(self):
-        shape = [[1, 0, 0], [1, 1, 3]]  # T-shaped piece
-        super().__init__(shape)
-
-class FivePiece(Piece):
-    def __init__(self):
-        shape = [[1, 1, 1, 1, 3]]  # Long horizontal piece
-        super().__init__(shape)
-
-class OneLeftMidPlusThreeVert(Piece):
-    def __init__(self):
-        shape = [[0, 1], 
-                 [1, 1], 
-                 [0, 3]]  # Vertical T-shaped piece
-        super().__init__(shape)
-
-class HingePieceRight(Piece):
-    def __init__(self):
-        shape = [[0, 1], [1, 3]]  # Mirror of HingePieceLeft
-        super().__init__(shape)
-
-class ThreeHorzPlusTwoHorzDown(Piece):
-    def __init__(self):
-        shape = [[1, 1, 1, 0], [0, 0, 1, 3]]  # Complex L-shaped piece
-        super().__init__(shape)
-
-def get_known_pieces():
-    """Returns a dictionary of all known pieces with their shapes."""
-    piece_classes = [
-        TwoPieceHorz, ThreePiece, TwoPieceVert, ThreePiecePlus1Vert,
-        OneLeftFourDown, OnePiece, HingePieceLeft, OneVertPlusThreePiece,
-        FivePiece, OneLeftMidPlusThreeVert, HingePieceRight, ThreeHorzPlusTwoHorzDown
-    ]
-    known_pieces = {}
-    for cls in piece_classes:
-        piece_instance = cls()  # Create an instance of the piece
-        piece_name = piece_instance.get_name()  # Get the piece's name
-        known_pieces[piece_name] = piece_instance.get_shape()  # Store the shape
-    return known_pieces
 
 # Function to handle mouse click events on the game grid
 def handle_click(game, pos):
@@ -536,7 +210,7 @@ def sigmoid(x):
 def derivative_relu(Z):
     return Z > 0
 
-def huber_loss(y_true, y_pred, delta=1.0):
+def huber_loss(y_true, y_pred, delta=0.1):
     error = y_pred - y_true
     is_small_error = np.abs(error) <= delta
     squared_loss = 0.5 * error ** 2
@@ -551,83 +225,127 @@ def derivative_huber(error, delta=1.0):
 
 
 class Q_Network():
-    def __init__(self,arch):
+    def __init__(self, arch):
         self.W1 = np.random.randn(arch[1], arch[0]) * np.sqrt(2.0/arch[0])
+        self.V_w1 = np.random.randn(arch[1], arch[0]) * np.sqrt(2.0/arch[0])
         self.b1 = np.zeros((arch[1], 1))
+        self.V_b1 = np.zeros((arch[1], 1))
         self.W2 = np.random.randn(arch[2], arch[1]) * np.sqrt(2.0/arch[1])
+        self.V_w2 = np.random.randn(arch[2], arch[1]) * np.sqrt(2.0/arch[1])
+
         self.b2 = np.zeros((arch[2], 1))
-        self.W3 = np.random.randn(arch[3], arch[2]) * np.sqrt(2.0/arch[2])
-        self.b3 = np.zeros((arch[3], 1))
+        self.W_b1 = np.zeros((arch[2], 1))
+        
+        # Dueling streams
+        self.W_value = np.random.randn(1, arch[2]) * np.sqrt(2.0/arch[2])
+        self.V_wv =  np.random.randn(1, arch[2]) * np.sqrt(2.0/arch[2]) # Value stream (1 output)
+        self.b_value = np.zeros((1, 1))
+        self.W_bv = np.zeros((1, 1))
+        self.W_adv = np.random.randn(arch[3], arch[2]) * np.sqrt(2.0/arch[2])
+        self.V_wa = np.random.randn(arch[3], arch[2]) * np.sqrt(2.0/arch[2])  # Advantage stream (N actions)
+        self.b_adv = np.zeros((arch[3], 1))
+        self.W_ba =  np.zeros((arch[3], 1))
     def forward(self, input):
         Z1 = np.dot(self.W1, input) + self.b1
         A1 = relu(Z1)
         Z2 = np.dot(self.W2, A1) + self.b2
         A2 = relu(Z2)
-        Z3 = np.dot(self.W3, A2) + self.b3 
-        A3 = Z3 # no activation function we want raw values
-        return Z1, A1, Z2, A2, Z3 , A3
+        # Value stream (scalar per state)
+        V = np.dot(self.W_value, A2) + self.b_value
+        
+        # Advantage stream (one per action)
+        A = np.dot(self.W_adv, A2) + self.b_adv
+        
+        # Combine streams
+        Q = V + (A - np.mean(A, axis=0, keepdims=True))  # Q(s,a) = V(s) + (A(s,a) - mean(A(s,a)))
+        
+        return Z1, A1, Z2, A2, Q
     def get_weights(self):
-        return self.W1, self.b1, self.W2, self.b2, self.W3, self.b3
+        return [self.W1, self.b1, self.W2, self.b2, self.W_value, self.b_value, self.W_adv, self.b_adv]
     def set_weights(self, x):
         self.W1 = x[0]
         self.b1 = x[1]
         self.W2 = x[2]
         self.b2 = x[3]
-        self.W3 = x[4] 
-        self.b3 = x[5]
-    def back_propogate(self, Z1, A1, Z2, A2, Z3, A3, state, target):
-        m = state.shape[1]
-        # Clip gradients to prevent explosion
-        error = (A3- target)
-        dZ3 = derivative_huber(error, 100)
+        self.W_value = x[4]
+        self.b_value = x[5]
+        self.W_adv = x[6]
+        self.b_adv = x[7]
 
-       
         
-        dZ2 = np.dot(self.W3.T, dZ3) * derivative_relu(Z2)
-        dZ2 = np.nan_to_num(dZ2, nan=0.0)
-        dZ1 = np.dot(self.W2.T, dZ2) * derivative_relu(Z1)
-        
-        dW3 = (1/m) * np.dot(dZ3, A2.T)
-        dW2 = (1/m) * np.dot(dZ2, A1.T)
-        
-         # ReLU derivative
-        dW1 = (1/m) * np.dot(dZ1, state.T)
-        
-        # Clip gradients
-        dW1 = np.clip(dW1, -5.0, 5.0)
-        dW2 = np.clip(dW2, -5.0, 5.0)
-        dW3 = np.clip(dW3, -5.0, 5.0)
-        
+    def back_propogate(self, Z1, A1, Z2, A2, Q, state, target):
+        m = state.shape[1]  # Batch size
+
+        # Calculate Q error (Huber derivative)
+        error = Q - target
+        dQ = derivative_huber(error, delta=1.0)
+
+        # Gradients for the value stream (V)
+        dV = np.sum(dQ, axis=0, keepdims=True)
+          # Sum over actions (axis=0) to get (1, m)
+
+        # Gradients for the advantage stream (A)
+        dA = dQ - np.mean(dQ, axis=0, keepdims=True)
+         # (50, m)
+
+        # Split gradients for value and advantage streams
+        # Value stream gradients
+        dW_value = (1/m) * np.dot(dV, A2.T)  # A2 (256, m) @ dV.T (m, 1) → (256, 1)
+        db_value = (1/m) * np.sum(dV, axis=1, keepdims=True)  # Sum over batch (axis=1)
+
+        # Advantage stream gradients
+        dW_adv = (1/m) * np.dot(dA, A2.T)  # A2 (256, m) @ dA.T (m, 50) → (256, 50)
+        db_adv = (1/m) * np.sum(dA, axis=1, keepdims=True)  # Sum over batch (axis=1)
+
+        # Backpropagate through shared layers
+        # Corrected: Use W_value and W_adv instead of their transposes
+        dZ2_shared = (
+            np.dot(self.W_value.T, dV) +  # (256, 1) @ (1, m) → (256, m)
+            np.dot(self.W_adv.T, dA)      # (256, 50) @ (50, m) → (256, m)
+        ) * derivative_relu(Z2)  # Z2 shape (256, m)
+
+        dW2 = (1/m) * np.dot(dZ2_shared, A1.T)  # (256, m) @ (m, 256) → (256, 256)
+        db2 = (1/m) * np.sum(dZ2_shared, axis=1, keepdims=True)
+
+        dZ1 = np.dot(self.W2.T, dZ2_shared) * derivative_relu(Z1)  # W2 (256, 256) → (256, 256).T @ (256, m) → (256, m)
+        dW1 = (1/m) * np.dot(dZ1, state.T)  # (256, m) @ (m, 86) → (256, 86)
         db1 = (1/m) * np.sum(dZ1, axis=1, keepdims=True)
-        db2 = (1/m) * np.sum(dZ2, axis=1, keepdims=True)
-        db3 = (1/m) * np.sum(dZ3, axis = 1, keepdims= True)
-    
-        return dW1, dW2, dW3, db1, db2, db3
-    def weight_update(self, dW1, dW2, dW3,  db1, db2, db3, alpha):
-        self.W1 -= alpha * np.nan_to_num(dW1, nan=0.0, posinf=1.0, neginf=-1.0)
-        self.W2 -= alpha * np.nan_to_num(dW2, nan=0.0, posinf=1.0, neginf=-1.0)
-        self.W3 -= alpha * np.nan_to_num(dW3, nan=0.0, posinf=1.0, neginf=-1.0)
-        self.b1 -= alpha * np.nan_to_num(db1, nan=0.0, posinf=1.0, neginf=-1.0)
-        self.b2 -= alpha * np.nan_to_num(db2, nan=0.0, posinf=1.0, neginf=-1.0)
-        self.b3 -= alpha * np.nan_to_num(db3, nan=0.0, posinf=1.0, neginf=-1.0)
 
-        return self.W1, self.b1, self.W2, self.b2, self.W3, self. b3
+        return dW1, db1, dW2, db2, dW_value, db_value, dW_adv, db_adv
+    def weight_update(
+    self, 
+    dW1, db1, 
+    dW2, db2, 
+    dW_value, db_value, 
+    dW_adv, db_adv, 
+    alpha
+):
+    # Update shared layers
+        self.W1 -= alpha * np.nan_to_num(dW1, nan=0.0)
+        self.b1 -= alpha * np.nan_to_num(db1, nan=0.0)
+        self.W2 -= alpha * np.nan_to_num(dW2, nan=0.0)
+        self.b2 -= alpha * np.nan_to_num(db2, nan=0.0)
+
+        # Update value stream
+        self.W_value -= alpha * np.nan_to_num(dW_value, nan=0.0)
+        self.b_value -= alpha * np.nan_to_num(db_value, nan=0.0)
+
+        # Update advantage stream
+        self.W_adv -= alpha * np.nan_to_num(dW_adv, nan=0.0)
+        self.b_adv -= alpha * np.nan_to_num(db_adv, nan=0.0)
         
 
-        
-    
 
-
-arch = [74, 256, 128, 50]
+arch = [86, 256, 256, 50]
 Q = Q_Network(arch)
 
-def one_hot_held(env):
-    if env.held_piece is None:
+def one_hot_held(held_piece, env):
+    if held_piece is None:
         return np.zeros(12)
     else:
         vector = np.zeros(12)
         for x in range(12):
-            if env.held_piece.__class__ == env.piece_types[x].__class__:
+            if held_piece.__class__ == env.piece_types[x].__class__:
                 vector[x] = 1
     return vector
 
@@ -652,56 +370,58 @@ def learn(minibatch, batch_size, gamma = 1, alpha = 0.1):
     #forward returns  A1, Z1, Z2, A2
     #we need  Z1, A1,Z2, A2, state, target
     #minibatch is composed of q_state, best_idx, reward, convert_state_to_vec(nxt_state,env), done 
+    rewards = []
     states = []
     q_targets = []
     Z1_batch = []
     A1_batch = []
     Z2_batch = []
     A2_batch = []
-    Z3_batch = []
-    A3_batch = []
-    states = np.hstack([sample[0] for sample in minibatch]) 
+    Q_batch = []
+    
+    states = np.hstack([sample[0][0] for sample in minibatch]) 
     for sample in minibatch:
-        state = sample[0]
+        state = sample[0][0]
         q_state = state # Ensure q_state is always defined
         if sample[4]:
             # Terminal state: target is just the reward
             q_target = sample[2]
 
-            Z1, A1, Z2, A2, Z3 , A3 = Q_target.forward(q_state)
+            Z1, A1, Z2, Q1 = Q_target.forward(q_state)
             Z1_batch.append(Z1)
             A1_batch.append(A1)
             Z2_batch.append(Z2)
             A2_batch.append(A2)
-            Z3_batch.append(Z3)
-            A3_batch.append(A3)
+            Q_batch.append(Q1)
+            
             
             # Create a target vector with the same shape as A2.
             # For terminal states, you might set all values to 0 and then set the chosen index to the reward.
-            target_vector = copy.deepcopy(A3)
+            target_vector = copy.deepcopy(Q1)
             # Define best_idx appropriately; if there's no best action in terminal state,
             # you could choose an index (for instance, 0) or handle it differently.
-            best_idx = 0  # or some logic to choose a default
+            best_idx = np.argmax(target_vector)  # or some logic to choose a default
             target_vector[best_idx] = q_target
             q_targets.append(target_vector)
         else:
             best_idx = sample[1] 
-            q_state = sample[0]
-            Z1, A1, Z2, A2, Z3 , A3 = Q_target.forward(q_state)
+            q_state = sample[0][0]
+            next_state = sample[3]
+            Z1, A1, Z2, A2, Q1 = Q_target.forward(q_state)
             Z1_batch.append(Z1)
             A1_batch.append(A1)
             Z2_batch.append(Z2)
             A2_batch.append(A2)
-            Z3_batch.append(Z3)
-            A3_batch.append(A3)
-            if np.isnan(A3).any():
+            Q_batch.append(Q1)
+            if np.isnan(Q1).any():
                 print("NaN detected in A2 before update")
-            if not (0 <= best_idx < len(A3)):
+                return
+            if not (0 <= best_idx < len(Q1)):
                 print(f"Invalid best_idx: {best_idx}")
-            future_reward = max(A3)
+            future_reward = max(Q_target.forward(next_state)[4])
             reward = sample[2]
-            q_target = reward + 0.95* future_reward
-            q_append = copy.deepcopy(A3)
+            q_target = reward + gamma* future_reward
+            q_append = copy.deepcopy(Q1)
             q_append[best_idx] = q_target
             q_targets.append(q_append)
     
@@ -710,15 +430,19 @@ def learn(minibatch, batch_size, gamma = 1, alpha = 0.1):
     A1 = np.hstack(A1_batch)  # (60, batch_size)
     Z2 = np.hstack(Z2_batch)  # (50, batch_size)
     A2 = np.hstack(A2_batch)
-    Z3 = np.hstack(Z3_batch)  # (50, batch_size)
-    A3 = np.hstack(A3_batch)  # (50, batch_size)
+    Q1 = np.hstack(Q_batch)  # (50, batch_size)  # (50, batch_size)
     targets = np.hstack(q_targets)
     targets = np.nan_to_num(targets, nan=0.0, posinf=1e6, neginf=-1e6)
     
-    loss = huber_loss(targets, A3, 200)
-    dW1, dW2, dW3, db1, db2, db3 = Q.back_propogate(Z1, A1, Z2, A2, Z3, A3, states, targets)
-        
-    Q.weight_update(dW1, dW2, dW3,  db1, db2, db3, alpha)
+    loss = huber_loss(targets, Q1, 0.5)
+    if random.random() < 0.01:
+        print("loss: ",np.argmax(loss))
+    dW1, db1, dW2, db2, dW_value, db_value, dW_adv, db_adv = Q.back_propogate(Z1, A1, Z2, A2, Q1, states, targets)
+    
+    
+    Q.weight_update(dW1, db1, dW2, db2, dW_value, db_value, dW_adv, db_adv, alpha)
+    
+    return np.argmax(loss)
     
             
         
@@ -734,13 +458,13 @@ def learn(minibatch, batch_size, gamma = 1, alpha = 0.1):
 Q_target = copy.deepcopy(Q) #Q' NeuralNetwork(same parms as above) then update_target(Q_target.NN) will also work
 
 # Replay Memory
-D = deque(maxlen=100000) # if D==maxlen and we append new data oldest one will get removed
+D = deque(maxlen=10000) # if D==maxlen and we append new data oldest one will get removed
 
 
 # Epsilon
-epsilon = 1
-epsilon_min = 0.02
-epsilon_decay = 0.9995
+epsilon = 1.0
+epsilon_min = 0.1
+epsilon_decay = 0.995
 
 # Gamma
 gamma = 0.95
@@ -753,6 +477,33 @@ def get_batch(D, batch_size):
     return states, actions, rewards, new_states, done 
 # Just to check the highest score obtained during training
 best_score = -np.inf
+    
+def convert_vect_move_no_hold(q_values, legal_moves, env):
+    legal_indices = []
+    masked_q = np.full_like(q_values, -np.inf)
+    for move in legal_moves:
+        # Calculate index accounting for piece dimensions
+        if move.x + move.piece.shape.shape[1] > 5: continue
+        if move.y + move.piece.shape.shape[0] > 5: continue
+        idx = move.x + move.y*5 
+        legal_indices.append(idx)
+    masked_q[legal_indices] = q_values[legal_indices]
+    best_idx = np.argmax(masked_q)
+    
+    base_idx = best_idx
+    x = base_idx % 5
+    y = base_idx // 5
+    
+    
+    for move in legal_moves:
+        if move.x == x and move.y == y and move.hold == False:
+            return move, best_idx
+        
+    
+
+    return 0
+    # Select best valid move
+    
     
 
 
@@ -791,22 +542,26 @@ def convert_vec_to_move(q_values, legal_moves, env):
 
 
 def convert_state_to_vec(state, env):
-    return np.concatenate((state.flatten(),one_hot_held(env), one_hot_next_pieces(env), [env.pts_per_move])).reshape(-1,1)
+    return np.concatenate((state.flatten(), one_hot_held(env.current_piece, env), one_hot_held(env.held_piece,env), one_hot_next_pieces(env), [env.pts_per_move])).reshape(-1,1)
 
 
 
 
-def train(num_episode=100000,batch_size= 256,C=100,ep= 20):
+
+def train(num_episode=1000,batch_size=128,C=1000, ep= 20, gamma = 1, tau = 0.005, alpha = 1 ):
     running = True
-    global epsilon, best_score
+    global epsilon,best_score
     steps = 0
     env = Game()
     num_episodes = 100  # Moving average window
-    episode_rewards = [] 
+    episode_scores = [] 
+    episodes_rewards = []
+    episode_losses = []
+    average_losses = []
     current_song = random.choice(play_lists)
-    pygame.mixer.music.load(current_song)
-    pygame.mixer.music.play()
-    
+    scores = []
+    rewards = []
+    lr = 2.5e-4
     for i in range(1,num_episode+1):
         episode_reward = 0
         episode_loss = 0
@@ -823,35 +578,40 @@ def train(num_episode=100000,batch_size= 256,C=100,ep= 20):
             
             state = nxt_state
             epsilon = max(epsilon_min,epsilon*epsilon_decay) # e decay
+            lr = max(lr * 0.999, 1e-5)
 
             # e-greedy(Q)
             if np.random.rand() < epsilon: 
-                legal_moves = env.generate_legal_moves(env.board, env.current_piece, env.held_piece, env.next_pieces)
-                if len(legal_moves) == 0:
+                hold_moves = env.generate_legal_moves(env.board, env.current_piece, env.held_piece, env.next_pieces)[2]
+                if len(hold_moves) == 0:
                     episode_score += env.score
+                    
                     done = True
-
+                    print("random")
                     break;
-                   
-                action = np.random.choice(legal_moves)
+                action = random.choice(hold_moves)
                 best_idx = (int(action.hold)+1)* (action.y*5 + action.x)
+                full_state_cache = [state, env.current_piece, env.held_piece, env.next_pieces, env.pts_per_move]
                 q_state = convert_state_to_vec(state, env)
             else:
-                legal_moves = env.generate_legal_moves(env.board, env.current_piece, env.held_piece, env.next_pieces)
+                legal_moves = env.generate_legal_moves(env.board, env.current_piece, env.held_piece, env.next_pieces)[2]
                 if len(legal_moves) == 0:
                     episode_score += env.score
                     done = True
                     break;
+                full_state_cache = [state, env.current_piece, env.held_piece, env.next_pieces, env.pts_per_move]
                 q_state = convert_state_to_vec(state, env)
-                action = Q.forward(q_state)[3].flatten()
-                action, best_idx = convert_vec_to_move(action, legal_moves,env)
+                action = Q.forward(q_state)[4].flatten()
+                action, best_idx = convert_vec_to_move(action, legal_moves, env)
                 
             if env.score > best_score:
                 best_score = env.score
+            if env.pts_per_move != 1:
+                print("board cleared or filled")
             nxt_state,reward,done, score = env.play_move(action)
             episode_reward += reward
             episode_score += score
-            D.append((q_state, best_idx, reward, convert_state_to_vec(nxt_state,env), done))
+            D.append(((q_state, full_state_cache), best_idx, reward, convert_state_to_vec(nxt_state,env), done))
             screen.fill(OBSIDIAN)  # Clear the screen with black
             draw_current_piece_label()
             draw_next_piece_label()
@@ -866,40 +626,53 @@ def train(num_episode=100000,batch_size= 256,C=100,ep= 20):
 
             if len(D) >= batch_size:
                 minibatch = random.sample(D, batch_size)
-                learn(minibatch, batch_size, 0.001)
+                loss = learn(minibatch, batch_size, gamma, alpha = lr)
+                episode_losses.append(loss)
             pygame.display.flip()  # Update the screen
             clock.tick(1000000)
             
             steps+=1
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
-                    running = False
+                    pygame.quit()
             if steps%C ==0: update_target(Q_target)
-        episode_rewards.append(episode_score)
-        
+        episode_scores.append(episode_score)
+        episodes_rewards.append(episode_reward)
             
         if i % ep == 0:
-            average_reward = 0
+            average_score = sum(episode_scores)/len(episode_scores)
             # Calculate the moving average of rewards over the last 'num_episodes' episodes
-            if len(episode_rewards) > num_episodes:
-                episode_rewards.pop(0)  # Keep the last 'num_episodes' rewards
-                average_reward = sum(episode_rewards) / len(episode_rewards)
+            if len(episode_scores) > num_episodes:
+                episode_scores.pop(0)  # Keep the last 'num_episodes' rewards
+                average_score = sum(episode_scores) / len(episode_scores)
+            average_reward = sum(episodes_rewards)/len(episodes_rewards)
+            # Calculate the moving average of rewards over the last 'num_episodes' episodes
+            if len(episodes_rewards) > num_episodes:
+                episodes_rewards.pop(0)  # Keep the last 'num_episodes' rewards
+                average_reward = sum(episodes_rewards) / len(episodes_rewards)
+            average_episode_loss = sum(episode_losses) / len(episode_losses)/ 128
+
+            scores.append(average_score)
+            rewards.append(average_reward)
+            average_losses.append(average_episode_loss)
+            
                 
             
             print("\n" * 2)
             print(f"Episode: {i} Reward: {episode_reward} and best score: {best_score} and done: {done}")
             print("Average Reward:", average_reward)
+            print("Average Score:", average_score)
             
         
-    return Q.get_weights()
+    return Q.get_weights(), scores, rewards, average_losses
 
 
 
 
-W1, b1, W2, b2, W3, b3 = train()
+weights, scores, rewards, average_losses = train()
 
 
-print(W1, b1, W2, b2, W3, b3)
+
 
 
 
@@ -1000,3 +773,27 @@ main(test)"""
 
 
 
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use("Qt5Agg")  # Use Agg backend (no GUI)
+
+print(average_losses)
+# Example reward array
+ # X-axis: episode numbers
+episodes = list(range(len(rewards)))
+episodes = [n*20 for n in episodes]
+# Create the plot
+plt.figure(figsize=(20, 10))  # Set figure size
+plt.plot(episodes, scores, marker='o', linestyle='-', color='b', label="scores")  # Plot with markers
+plt.plot(episodes, rewards, marker='s', linestyle='--', color='r', label="Rewards") 
+plt.plot(episodes, average_losses, marker='s', linestyle='--', color='r', label="loss")# Plot loss
+
+# Labels and title
+plt.xlabel("Episode")
+plt.ylabel("Score")
+plt.title("Score per Episode")
+plt.legend()
+plt.grid(True)  # Add grid for better visualization
+
+# Show the plot
+plt.show()
