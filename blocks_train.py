@@ -9,6 +9,7 @@ import copy
 from copy import deepcopy
 import os
 from blocks_env import *
+from Q_network import *
 np.random.seed(421)
 random.seed(421)
 np.set_printoptions(threshold=np.inf, linewidth=np.inf)
