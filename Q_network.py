@@ -30,6 +30,7 @@ class Q_Network():
         self.b_adv = np.zeros((arch[3], 1))
         self.W_ba =  np.zeros((arch[3], 1))
     def forward(self, input):
+        print(input.shape, self.W1.shape)
         Z1 = np.dot(self.W1, input) + self.b1
         A1 = relu(Z1)
         Z2 = np.dot(self.W2, A1) + self.b2
@@ -42,7 +43,6 @@ class Q_Network():
         
         # Combine streams
         Q = V + (A - np.mean(A, axis=0, keepdims=True))  # Q(s,a) = V(s) + (A(s,a) - mean(A(s,a)))
-        
         return Z1, A1, Z2, A2, Q
     def get_weights(self):
         return [self.W1, self.b1, self.W2, self.b2, self.W_value, self.b_value, self.W_adv, self.b_adv]

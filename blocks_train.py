@@ -124,8 +124,8 @@ def learn(minibatch, batch_size, indices, gamma = 1, alpha = 0.1):
     
     
     Q.weight_update(dW1, db1, dW2, db2, dW_value, db_value, dW_adv, db_adv, alpha)
-    
-    new_td_errors = []
+    print(targets.shape)
+    new_td_errors =  targets - Q.forward(q_state)[4][best_idx]
     update_priorities_in_deque(D, indices, new_td_errors)
     return np.argmax(loss)
     
@@ -320,7 +320,7 @@ def train(num_episode=1000,batch_size=128,C=1000, ep= 20, gamma = 1, tau = 0.005
             episode_reward += reward
             episode_score += score
             nxt_q_values = Q_target.forward(convert_state_to_vec(nxt_state, env))[4]  # Get Q-values
-            td_error = int(abs(reward + gamma * np.max(nxt_q_values) - Q.forward(q_state)[4][best_idx]))
+            td_error = float(abs(reward + gamma * np.max(nxt_q_values) - Q.forward(q_state)[4][best_idx]))
             D.append(((q_state, full_state_cache), best_idx, reward, convert_state_to_vec(nxt_state, env), done, td_error))
             screen.fill(OBSIDIAN)  # Clear the screen with black
             draw_current_piece_label()
