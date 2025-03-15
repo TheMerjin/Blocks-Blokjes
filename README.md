@@ -25,6 +25,6 @@ Blokjes has a smaller state space and action space which makes it suitable for t
    ```bash
    git clone https://github.com/TheMerjin/Blocks-Blokjes.git
    cd Blocks-Blokjes
-2. **Install numpy using pip**
+2. **Install numpy and pygame (if you wish to play the game or watch training) using pip**
    ```bash
    pip install numpy
