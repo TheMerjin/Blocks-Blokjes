@@ -15,7 +15,8 @@ Blokjes has a smaller state space and action space which makes it suitable for t
 
 - Customizable 5x5 game grid.
 - AI agent powered by Deep Q-Learning.
-- Comprehensive training environment for reinforcement learning experiments.
+- Comprehensive training environment for reinforcement learning experiments.\
+-Playable game which can be played by running game.py
 
 ## Installation
 
