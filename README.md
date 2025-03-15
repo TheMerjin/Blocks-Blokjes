@@ -28,3 +28,4 @@ Blokjes has a smaller state space and action space which makes it suitable for t
 2. **Install numpy and pygame (if you wish to play the game or watch training) using pip**
    ```bash
    pip install numpy
+   pip install pygame
