@@ -7,7 +7,7 @@
 
 ## Overview
 
-Blokjes is a Python-based implementation of the Blokjes game, enhanced with a Deep Q-Learning (DQN) AI agent. The project demonstrates the application of reinforcement learning techniques to develop an intelligent agent capable of learning optimal strategies through self-play.
+Blokjes is a Python-based implementation of the [Blokes](https://frozenfractal.com/games/blokjes/) and a Dueling Deep Q-Learning (DQN) AI agent with prioritized replay coded from scratch in numpy. The project demonstrates the application of reinforcement learning techniques to develop an intelligent agent capable of learning optimal strategies through self-play.
 
 ## Features
 
