@@ -22,3 +22,6 @@ Blokjes is a Python-based implementation of the Blokjes game, enhanced with a De
    ```bash
    git clone https://github.com/TheMerjin/Blocks-Blokjes.git
    cd Blocks-Blokjes
+2. **Install numpy using pip**
+   ```bash
+   pip install numpy
