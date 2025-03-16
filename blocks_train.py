@@ -1,17 +1,12 @@
 import numpy as np
 import random
-import pygame
-import numpy as np
 from collections import deque
 import random
-from collections import deque
 import copy
 from copy import deepcopy
-import os
 from blocks_env import *
 from Q_network import *
 from activations import *
-from display import *
 np.random.seed(421)
 random.seed(421)
 np.set_printoptions(threshold=np.inf, linewidth=np.inf)
@@ -64,6 +59,7 @@ def learn(minibatch, batch_size, indices, gamma = 1, alpha = 0.1):
     states = np.hstack([sample[0][0] for sample in minibatch]) 
     for sample in minibatch:
         state = sample[0][0]
+        full_state_cache = sample[0][1]
         q_state = state # Ensure q_state is always defined
         if sample[4]:
             # Terminal state: target is just the reward
@@ -100,9 +96,13 @@ def learn(minibatch, batch_size, indices, gamma = 1, alpha = 0.1):
                 return
             if not (0 <= best_idx < len(Q1)):
                 print(f"Invalid best_idx: {best_idx}")
-            future_reward = max(Q_target.forward(next_state)[4])
+           
+            q_idx = convert_vec_to_move(Q.forward(next_state)[4], full_state_cache[5][2])[1]
+            future_reward = Q_target.forward(next_state)[4][q_idx]
             reward = sample[2]
             q_target = reward + gamma* future_reward
+            if random.random() < 0.0001:
+                print(future_reward)
             q_append = copy.deepcopy(Q1)
             q_append[best_idx] = q_target
             q_targets.append(q_append)
@@ -117,8 +117,6 @@ def learn(minibatch, batch_size, indices, gamma = 1, alpha = 0.1):
     targets = np.nan_to_num(targets, nan=0.0, posinf=1e6, neginf=-1e6)
     
     loss = huber_loss(targets, Q1, 0.5)
-    if random.random() < 0.01:
-        print("loss: ",np.argmax(loss))
     dW1, db1, dW2, db2, dW_value, db_value, dW_adv, db_adv = Q.back_propogate(Z1, A1, Z2, A2, Q1, states, targets)
 
     
@@ -209,7 +207,7 @@ def convert_vect_move_no_hold(q_values, legal_moves, env):
     
 
 
-def convert_vec_to_move(q_values, legal_moves, env):
+def convert_vec_to_move(q_values, legal_moves):
     # Initialize all actions as invalid
     masked_q = np.full_like(q_values, -np.inf)
     
@@ -263,7 +261,7 @@ def sample(deque, batch_size, alpha = 0.6):
     indices = np.random.choice(len(deque),size = batch_size, p = probabilities) 
     experiences = [deque[idx] for idx in indices]
     return experiences, indices
-def train(num_episode=1000,batch_size=128,C=1000, ep= 20, gamma = 1, tau = 0.005, alpha = 1 ):
+def train(num_episode=10000,batch_size= 32,C=1000, ep = 300, gamma = 1, tau = 0.005, alpha = 1 ):
     running = True
     global epsilon,best_score
     steps = 0
@@ -273,7 +271,6 @@ def train(num_episode=1000,batch_size=128,C=1000, ep= 20, gamma = 1, tau = 0.005
     episodes_rewards = []
     episode_losses = []
     average_losses = []
-    current_song = random.choice(play_lists)
     scores = []
     rewards = []
     lr = 2.5e-4
@@ -305,7 +302,7 @@ def train(num_episode=1000,batch_size=128,C=1000, ep= 20, gamma = 1, tau = 0.005
                     break;
                 action = random.choice(hold_moves)
                 best_idx = (int(action.hold)+1)* (action.y*5 + action.x)
-                full_state_cache = [state, env.current_piece, env.held_piece, env.next_pieces, env.pts_per_move]
+                full_state_cache = [state, env.current_piece, env.held_piece, env.next_pieces, env.pts_per_move, env.generate_legal_moves(env.board, env.current_piece, env.held_piece, env.next_pieces)]
                 q_state = convert_state_to_vec(state, env)
             else:
                 legal_moves = env.generate_legal_moves(env.board, env.current_piece, env.held_piece, env.next_pieces)[2]
@@ -313,10 +310,10 @@ def train(num_episode=1000,batch_size=128,C=1000, ep= 20, gamma = 1, tau = 0.005
                     episode_score += env.score
                     done = True 
                     break; 
-                full_state_cache = [state, env.current_piece, env.held_piece, env.next_pieces, env.pts_per_move]
+                full_state_cache = [state, env.current_piece, env.held_piece, env.next_pieces, env.pts_per_move,env.generate_legal_moves(env.board, env.current_piece, env.held_piece, env.next_pieces)]
                 q_state = convert_state_to_vec(state, env)
                 action = Q.forward(q_state)[4].flatten()
-                action, best_idx = convert_vec_to_move(action, legal_moves, env)
+                action, best_idx = convert_vec_to_move(action, legal_moves)
                 
             if env.score > best_score:
                 best_score = env.score
@@ -328,29 +325,14 @@ def train(num_episode=1000,batch_size=128,C=1000, ep= 20, gamma = 1, tau = 0.005
             nxt_q_values = Q_target.forward(convert_state_to_vec(nxt_state, env))[4]  # Get Q-values
             td_error = float(abs(reward + gamma * np.max(nxt_q_values) - Q.forward(q_state)[4][best_idx]))
             D.append(((q_state, full_state_cache), best_idx, reward, convert_state_to_vec(nxt_state, env), done, td_error))
-            screen.fill(OBSIDIAN)  # Clear the screen with black
-            draw_current_piece_label()
-            draw_next_piece_label()
-            draw_board(env.board)  # Draw the game board
-            draw_score(env.score)
-            draw_current(env.current_piece)
-            draw_next_piece(env.next_pieces[0])
-            draw_held_piece_label()
-            draw_held_piece(env.held_piece)
-            draw_pts_per_move(env.pts_per_move)
             # Learining Phase
 
             if len(D) >= batch_size:
                 minibatch, indices = sample(D, batch_size= batch_size)
                 loss = learn(minibatch, batch_size,indices, gamma = gamma,  alpha = lr)
                 episode_losses.append(loss)
-            pygame.display.flip()  # Update the screen
-            clock.tick(1000000)
             
             steps+=1
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
             if steps%C ==0: update_target(Q_target)
         episode_scores.append(episode_score)
         episodes_rewards.append(episode_reward)
@@ -385,12 +367,40 @@ def train(num_episode=1000,batch_size=128,C=1000, ep= 20, gamma = 1, tau = 0.005
 
 
 
-weights, scores, rewards, average_losses = train()
 
 
 
 
 
+from itertools import product
+
+# Define parameter grid
+param_grid = {
+    'alpha': [1e-3, 1e-4, 1e-5],
+    'gamma': [0.99, 0.95, 0.90],
+    'epsilon_decay': [0.995, 0.99, 0.98],
+    'C': [500, 1000, 2000],
+    'batch_size': [32, 64, 128]
+}
+
+# Store best config
+best_params = None
+best_score = -np.inf
+
+# Run grid search
+for alpha, gamma, epsilon_decay, C, batch_size in product(*param_grid.values()):
+    print(f"\nTesting config: alpha={alpha}, gamma={gamma}, epsilon_decay={epsilon_decay}, C={C}, batch_size={batch_size}")
+    
+    # Train with current parameters
+    score = train(num_episode=1000, batch_size=batch_size, C=C, ep=500, gamma=gamma, alpha=alpha)[1][-1]
+    
+    # Save best config
+    if score > best_score:
+        best_score = score
+        best_params = {'alpha': alpha, 'gamma': gamma, 'epsilon_decay': epsilon_decay, 'C': C, 'batch_size': batch_size}
+
+print("\nBest parameters:", best_params)
+print("Best score:", best_score)
 
 
 

@@ -1,64 +1,12 @@
 import numpy as np
 import random
-import pygame
 import numpy as np
-from collections import deque
 import random
-from collections import deque
-import copy
 from copy import deepcopy
-import os
 
 np.random.seed(421)
 random.seed(421)
 np.set_printoptions(threshold=np.inf, linewidth=np.inf)
-
-OBSIDIAN = (20, 18, 35)       # Backgrounds, large elements
-AMETHYST = (88, 47, 161)    # Buttons, accents
-GOLD = (193, 154, 107)       # Text, borders, fine details
-WHITE = (237, 234, 229)
-HUSHED_SKY = (155, 168, 183)
-
-
-# Set window position (e.g., x=100, y=100 pixels from top-left corner)
-os.environ['SDL_VIDEO_WINDOW_POS'] = "0,0"
-# Initialize Pygame
-
-
-# Start with a random song
-
-
-play_lists = [r"C:\Users\Sreek\Downloads\Auto_typer\storm-clouds-purpple-cat(chosic.com).mp3",r"C:\Users\Sreek\Downloads\Auto_typer\Sonder(chosic.com).mp3",r"C:\Users\Sreek\Downloads\Auto_typer\Ghostrifter-Official-Purple-Dream(chosic.com).mp3", r"C:\Users\Sreek\Downloads\Auto_typer\Heart-Of-The-Ocean(chosic.com).mp3" ]
-# Constants for the game
-
-# Play indefinitely (loop)
-CELL_SIZE = 100  # Size of each cell in pixels
-BOARD_SIZE = 5   # 5x5 board
-NEXT_PIECES_COUNT = 3  # Number of next pieces to display
-MARGIN = 20  # Margin between board and next pieces display
-
-
-# Calculate window dimensions
-BOARD_WIDTH = 100 * BOARD_SIZE
-NEXT_PIECES_WIDTH = CELL_SIZE * 6 # Width allocated for next pieces
-WINDOW_WIDTH = BOARD_WIDTH + MARGIN + NEXT_PIECES_WIDTH
-WINDOW_HEIGHT = 100 * BOARD_SIZE+ 200
-
-# Set up display
-pygame.init()
-
-# Game setup
-screen = pygame.display.set_mode((1000, 800))  # Screen dimensions
-pygame.display.set_caption('Your Game')  # Set game window title
-clock = pygame.time.Clock()
-MUSIC_END_EVENT = pygame.USEREVENT + 1  # Custom event for music end
-pygame.mixer.music.set_endevent(MUSIC_END_EVENT)
-# Define colors
-
-font = pygame.font.SysFont(None, 24)
-
-BLACK = (0, 0, 0)
-BLUE = (0, 0, 255)
 
 class Game:
     def __init__(self):

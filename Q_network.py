@@ -1,15 +1,8 @@
 import numpy as np
-import random
-import pygame
-import numpy as np
-from collections import deque
-import random
-from collections import deque
-import copy
-from copy import deepcopy
 from activations import *
 class Q_Network():
     def __init__(self, arch):
+        """ He initizalied weights since we are using RELU"""
         self.W1 = np.random.randn(arch[1], arch[0]) * np.sqrt(2.0/arch[0])
         self.V_w1 = np.random.randn(arch[1], arch[0]) * np.sqrt(2.0/arch[0])
         self.b1 = np.zeros((arch[1], 1))
@@ -21,7 +14,7 @@ class Q_Network():
         self.W_b1 = np.zeros((arch[2], 1))
         
         # Dueling streams
-        self.W_value = np.random.randn(1, arch[2]) * np.sqrt(2.0/arch[2])
+        self.W_value = np.random.randn(1, arch[2]) * np.sqrt(2.0/arch[2]) 
         self.V_wv =  np.random.randn(1, arch[2]) * np.sqrt(2.0/arch[2]) # Value stream (1 output)
         self.b_value = np.zeros((1, 1))
         self.W_bv = np.zeros((1, 1))
