@@ -385,7 +385,7 @@ for alpha, gamma, epsilon, epsilon_decay, alpha_decay, C, batch_size in tqdm(con
     print(f"\nTesting config: alpha={alpha}, gamma={gamma}, epsilon_decay={epsilon_decay}, C={C}, batch_size={batch_size} and alpha_decay {alpha_decay}, epsilon {epsilon}")
     
     # Train with current parameters; adjust 'train' as needed.
-    score = train(num_episode=100 batch_size=batch_size, C=C, ep=20, gamma=gamma, alpha=alpha, alpha_decay=alpha_decay)[1][-1]
+    score = train(num_episode=100, batch_size=batch_size, C=C, ep=20, gamma=gamma, alpha=alpha, alpha_decay=alpha_decay)[1][-1]
    
     
     # Save best config
