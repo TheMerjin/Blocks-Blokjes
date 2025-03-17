@@ -7,6 +7,8 @@ from copy import deepcopy
 from blocks_env import *
 from Q_network import *
 from activations import *
+from tqdm import tqdm
+import time
 np.random.seed(421)
 random.seed(421)
 np.set_printoptions(threshold=np.inf, linewidth=np.inf)
@@ -94,15 +96,10 @@ def learn(minibatch, batch_size, indices, gamma = 1, alpha = 0.1):
             if np.isnan(Q1).any():
                 print("NaN detected in A2 before update")
                 return
-            if not (0 <= best_idx < len(Q1)):
-                print(f"Invalid best_idx: {best_idx}")
-           
             q_idx = convert_vec_to_move(Q.forward(next_state)[4], full_state_cache[5][2])[1]
             future_reward = Q_target.forward(next_state)[4][q_idx]
             reward = sample[2]
             q_target = reward + gamma* future_reward
-            if random.random() < 0.0001:
-                print(future_reward)
             q_append = copy.deepcopy(Q1)
             q_append[best_idx] = q_target
             q_targets.append(q_append)
@@ -162,12 +159,7 @@ D = deque(maxlen=100000) # if D==maxlen and we append new data oldest one will g
 
 
 # Epsilon
-epsilon = 1.0
-epsilon_min = 0.1
-epsilon_decay = 0.995
 
-# Gamma
-gamma = 0.95
 
 
 
@@ -245,7 +237,7 @@ def convert_state_to_vec(state, env):
     return np.concatenate((state.flatten(), one_hot_held(env.current_piece, env), one_hot_held(env.held_piece,env), one_hot_next_pieces(env), [env.pts_per_move])).reshape(-1,1)
 
 
-
+epsilon_min = 0.00001
 
 def sample(deque, batch_size, alpha = 0.6):
     #what is alpha? alpha determines the uniformity basically like how niormal the distribution is. NEED to tune
@@ -261,9 +253,10 @@ def sample(deque, batch_size, alpha = 0.6):
     indices = np.random.choice(len(deque),size = batch_size, p = probabilities) 
     experiences = [deque[idx] for idx in indices]
     return experiences, indices
-def train(num_episode=10000,batch_size= 32,C=1000, ep = 300, gamma = 1, tau = 0.005, alpha = 1 ):
+def train(num_episode=10000,batch_size= 32,C=1000, ep = 300, gamma = 1, tau = 0.005, alpha = 1, alpha_decay = 1, epsilon = 0.98 ):
     running = True
-    global epsilon,best_score
+    best_score = -np.inf
+    epsilon = epsilon
     steps = 0
     env = Game()
     num_episodes = 100  # Moving average window
@@ -273,7 +266,7 @@ def train(num_episode=10000,batch_size= 32,C=1000, ep = 300, gamma = 1, tau = 0.
     average_losses = []
     scores = []
     rewards = []
-    lr = 2.5e-4
+    lr = alpha
     for i in range(1,num_episode+1):
         episode_reward = 0
         episode_loss = 0
@@ -290,7 +283,7 @@ def train(num_episode=10000,batch_size= 32,C=1000, ep = 300, gamma = 1, tau = 0.
             
             state = nxt_state
             epsilon = max(epsilon_min,epsilon*epsilon_decay) # e decay
-            lr = max(lr * 0.999, 1e-5)
+            lr = max(lr * alpha_decay, 1e-5)
 
             # e-greedy(Q)
             if np.random.rand() < epsilon: 
@@ -356,10 +349,6 @@ def train(num_episode=10000,batch_size= 32,C=1000, ep = 300, gamma = 1, tau = 0.
             
                 
             
-            print("\n" * 2)
-            print(f"Episode: {i} Reward: {episode_reward} and best score: {best_score} and done: {done}")
-            print("Average Reward:", average_reward)
-            print("Average Score:", average_score)
             
         
     return Q.get_weights(), scores, rewards, average_losses
@@ -376,11 +365,13 @@ from itertools import product
 
 # Define parameter grid
 param_grid = {
-    'alpha': [1e-3, 1e-4, 1e-5],
-    'gamma': [0.99, 0.95, 0.90],
-    'epsilon_decay': [0.995, 0.99, 0.98],
-    'C': [500, 1000, 2000],
-    'batch_size': [32, 64, 128]
+    'alpha': [2.5e-4, 1e-3, 1e-4, 1e-5],
+    'gamma': [0.9, 0.95, 0.90, 0.50],
+    "epsilon": [0.001, 0.01, 0.1, 2.5],
+    'epsilon_decay': [0.995, 0.99, 0.98, 0,90],
+    "alpha_decay" : [1, 0.999, 0.995, 0.990],
+    'C': [ 200 , 500, 1000, 2000],
+    'batch_size': [16, 32, 64, 128]
 }
 
 # Store best config
@@ -388,44 +379,21 @@ best_params = None
 best_score = -np.inf
 
 # Run grid search
-for alpha, gamma, epsilon_decay, C, batch_size in product(*param_grid.values()):
-    print(f"\nTesting config: alpha={alpha}, gamma={gamma}, epsilon_decay={epsilon_decay}, C={C}, batch_size={batch_size}")
+configs = list(product(*param_grid.values()))
+
+for alpha, gamma, epsilon, epsilon_decay, alpha_decay, C, batch_size in tqdm(configs, desc="Testing Configurations --- Search progress:", total=len(configs)):
+    print(f"\nTesting config: alpha={alpha}, gamma={gamma}, epsilon_decay={epsilon_decay}, C={C}, batch_size={batch_size} and alpha_decay {alpha_decay}, epsilon {epsilon}")
     
-    # Train with current parameters
-    score = train(num_episode=1000, batch_size=batch_size, C=C, ep=500, gamma=gamma, alpha=alpha)[1][-1]
+    # Train with current parameters; adjust 'train' as needed.
+    score = train(num_episode=100 batch_size=batch_size, C=C, ep=20, gamma=gamma, alpha=alpha, alpha_decay=alpha_decay)[1][-1]
+   
     
     # Save best config
     if score > best_score:
         best_score = score
-        best_params = {'alpha': alpha, 'gamma': gamma, 'epsilon_decay': epsilon_decay, 'C': C, 'batch_size': batch_size}
-
+        best_params = {'alpha': alpha, 'gamma': gamma, 'epsilon_decay': epsilon_decay, 'C': C, 'batch_size': batch_size, 'alpha_decay': alpha_decay, 'epsilon': epsilon}
 print("\nBest parameters:", best_params)
 print("Best score:", best_score)
 
 
 
-
-import matplotlib.pyplot as plt
-import matplotlib
-matplotlib.use("Qt5Agg")  # Use Agg backend (no GUI)
-
-print(average_losses)
-# Example reward array
- # X-axis: episode numbers
-episodes = list(range(len(rewards)))
-episodes = [n*20 for n in episodes]
-# Create the plot
-plt.figure(figsize=(20, 10))  # Set figure size
-plt.plot(episodes, scores, marker='o', linestyle='-', color='b', label="scores")  # Plot with markers
-plt.plot(episodes, rewards, marker='s', linestyle='--', color='r', label="Rewards") 
-plt.plot(episodes, average_losses, marker='s', linestyle='--', color='r', label="loss")# Plot loss
-
-# Labels and title
-plt.xlabel("Episode")
-plt.ylabel("Score")
-plt.title("Score per Episode")
-plt.legend()
-plt.grid(True)  # Add grid for better visualization
-
-# Show the plot
-plt.show()
